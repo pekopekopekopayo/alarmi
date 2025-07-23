@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'schedule_screen.dart';
+import '../models/schedule.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -14,6 +17,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime _selectedDate;
   late DateTime _currentMonth;
   final int _initialPage = 1000;
+  Map<String, List<Schedule>> _schedules = {};
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -21,6 +26,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _selectedDate = DateTime.now();
     _currentMonth = DateTime(_selectedDate.year, _selectedDate.month);
     _pageController = PageController(initialPage: _initialPage);
+    _loadSchedules();
+  }
+
+  Future<void> _loadSchedules() async {
+    final prefs = await SharedPreferences.getInstance();
+    final schedulesJson = prefs.getString('schedules') ?? '[]';
+    final List<dynamic> decodedList = json.decode(schedulesJson);
+
+    final Map<String, List<Schedule>> scheduleMap = {};
+    for (var item in decodedList) {
+      final schedule = Schedule.fromJson(item);
+      final dateKey = DateFormat('yyyy-MM-dd').format(schedule.date);
+      if (!scheduleMap.containsKey(dateKey)) {
+        scheduleMap[dateKey] = [];
+      }
+      scheduleMap[dateKey]!.add(schedule);
+    }
+
+    if (mounted) {
+      setState(() {
+        _schedules = scheduleMap;
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<Schedule> _getSchedulesForDate(DateTime date) {
+    final dateKey = DateFormat('yyyy-MM-dd').format(date);
+    return _schedules[dateKey] ?? [];
   }
 
   List<DateTime> _getDaysInMonth(DateTime month) {
@@ -67,12 +101,30 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
 
-    // 스케줄 화면에서 돌아왔을 때 상태 갱신
     if (result == true && mounted) {
+      await _loadSchedules();
       setState(() {
         _selectedDate = date;
       });
     }
+  }
+
+  Color _getScheduleColor(List<Schedule> schedules) {
+    if (schedules.isEmpty) return Colors.transparent;
+
+    bool hasWaiting = schedules.any((s) => s.status == ScheduleStatus.waiting);
+    bool hasInProgress = schedules.any((s) => s.status == ScheduleStatus.inProgress);
+    bool hasCompleted = schedules.any((s) => s.status == ScheduleStatus.completed);
+
+    if (hasWaiting) {
+      return Colors.grey.withOpacity(0.5); // 대기 상태가 하나라도 있으면 회색
+    } else if (hasInProgress) {
+      return Colors.blue.withOpacity(0.5); // 진행중이 있으면 파란색
+    } else if (hasCompleted) {
+      return Colors.green.withOpacity(0.5); // 완료만 있으면 초록색
+    }
+
+    return Colors.transparent;
   }
 
   Widget _buildDayCell(DateTime date, DateTime month) {
@@ -84,6 +136,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final isSunday = date.weekday == 7;
     final isSaturday = date.weekday == 6;
 
+    final schedules = _getSchedulesForDate(date);
+    final hasSchedules = schedules.isNotEmpty;
+    final scheduleColor = _getScheduleColor(schedules);
+
     return GestureDetector(
       onTap: () => _onDateSelected(date),
       child: Container(
@@ -93,44 +149,100 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ? Theme.of(context).primaryColor
               : isToday
                   ? Theme.of(context).primaryColor.withOpacity(0.1)
-                  : null,
-          borderRadius: BorderRadius.circular(8),
+                  : scheduleColor,
+          borderRadius: BorderRadius.circular(16),
           border: isToday && !isSelected
-              ? Border.all(color: Theme.of(context).primaryColor)
-              : null,
+              ? Border.all(color: Theme.of(context).primaryColor, width: 2)
+              : hasSchedules && !isSelected
+                  ? Border.all(
+                      color: scheduleColor.withOpacity(1),
+                      width: 2,
+                    )
+                  : null,
         ),
-        child: Center(
-          child: Text(
-            date.day.toString(),
-            style: TextStyle(
-              color: isSelected
-                  ? Colors.white
-                  : !isCurrentMonth
-                      ? Colors.grey.withOpacity(0.5)
-                      : isSunday
-                          ? Colors.red
-                          : isSaturday
-                              ? Colors.blue
-                              : isToday
-                                  ? Theme.of(context).primaryColor
-                                  : Colors.black87,
-              fontSize: 16,
-              fontWeight: isToday || isSelected ? FontWeight.bold : null,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              date.day.toString(),
+              style: TextStyle(
+                color: isSelected
+                    ? Colors.white
+                    : !isCurrentMonth
+                        ? Colors.grey.withOpacity(0.5)
+                        : isSunday
+                            ? Colors.red
+                            : isSaturday
+                                ? Colors.blue
+                                : isToday
+                                    ? Theme.of(context).primaryColor
+                                    : Colors.black87,
+                fontSize: 24,
+                fontWeight: isToday || isSelected ? FontWeight.bold : null,
+              ),
             ),
-          ),
+            if (hasSchedules && !isSelected) ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: scheduleColor.withOpacity(1),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  if (schedules.length > 1) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: scheduleColor.withOpacity(1),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+            if (hasSchedules) ...[
+              const SizedBox(height: 6),
+              Text(
+                schedules.map((s) => s.time).join(', '),
+                style: TextStyle(
+                  color: isSelected ? Colors.white : scheduleColor.withOpacity(1),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
         ),
       ),
     );
   }
 
   Widget _buildWeekdayHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: ['일', '월', '화', '수', '목', '금', '토']
             .map((day) => SizedBox(
-                  width: 40,
+                  width: 52,
                   child: Text(
                     day,
                     textAlign: TextAlign.center,
@@ -139,7 +251,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         '일': Colors.red,
                         '토': Colors.blue,
                       }[day] ?? Colors.grey[600],
-                      fontSize: 14,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ))
@@ -150,9 +263,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return WillPopScope(
       onWillPop: () async {
-        // 앱 종료 확인 다이얼로그
         final shouldPop = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -176,11 +296,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
         appBar: AppBar(
           title: Text(
             DateFormat('yyyy년 M월', 'ko_KR').format(_currentMonth),
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
           ),
           centerTitle: true,
           leading: IconButton(
             icon: const Icon(Icons.chevron_left),
+            iconSize: 32,
             onPressed: () => _pageController.previousPage(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
@@ -189,6 +313,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.chevron_right),
+              iconSize: 32,
               onPressed: () => _pageController.nextPage(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
@@ -201,29 +326,34 @@ class _CalendarScreenState extends State<CalendarScreen> {
             children: [
               _buildWeekdayHeader(),
               Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  onPageChanged: (index) {
-                    setState(() {
-                      _currentMonth = _getMonthFromIndex(index);
-                    });
-                  },
-                  itemBuilder: (context, index) {
-                    final month = _getMonthFromIndex(index);
-                    final days = _getDaysInMonth(month);
-                    return GridView.builder(
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        childAspectRatio: 1,
-                      ),
-                      itemCount: days.length,
-                      itemBuilder: (context, index) => _buildDayCell(days[index], month),
-                    );
-                  },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: PageView.builder(
+                    controller: _pageController,
+                    onPageChanged: (index) {
+                      setState(() {
+                        _currentMonth = _getMonthFromIndex(index);
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      final month = _getMonthFromIndex(index);
+                      final days = _getDaysInMonth(month);
+                      return GridView.builder(
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 7,
+                          childAspectRatio: 0.6,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                        itemCount: days.length,
+                        itemBuilder: (context, index) => _buildDayCell(days[index], month),
+                      );
+                    },
+                  ),
                 ),
               ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
