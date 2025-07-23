@@ -253,123 +253,143 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
     final schedules = filteredSchedules;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          DateFormat('yyyy년 M월 d일', 'ko_KR').format(widget.selectedDate),
-        ),
-        actions: [
-          PopupMenuButton<ScheduleStatus?>(
-            icon: const Icon(Icons.filter_list),
-            initialValue: _statusFilter,
-            onSelected: (status) {
-              setState(() {
-                _statusFilter = status;
-              });
+    return WillPopScope(
+      onWillPop: () async {
+        // 변경사항이 있었다면 true를 반환하여 달력 화면에 알림
+        Navigator.of(context).pop(_schedules.isNotEmpty);
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // 변경사항이 있었다면 true를 반환하여 달력 화면에 알림
+              Navigator.of(context).pop(_schedules.isNotEmpty);
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: null,
-                child: Text('전체'),
-              ),
-              ...ScheduleStatus.values.map((status) => PopupMenuItem(
-                value: status,
-                child: Text(getStatusText(status)),
-              )),
-            ],
           ),
-        ],
-      ),
-      body: schedules.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    '스케줄이 없습니다',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey,
-                    ),
+          title: Text(
+            DateFormat('yyyy년 M월 d일', 'ko_KR').format(widget.selectedDate),
+          ),
+          actions: [
+            PopupMenuButton<ScheduleStatus?>(
+              icon: const Icon(Icons.filter_list),
+              initialValue: _statusFilter,
+              onSelected: (status) {
+                setState(() {
+                  _statusFilter = status;
+                });
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: null,
+                  child: Text('전체'),
+                ),
+                ...ScheduleStatus.values.map((status) => PopupMenuItem(
+                  value: status,
+                  child: Row(
+                    children: [
+                      getStatusIcon(status),
+                      const SizedBox(width: 8),
+                      Text(getStatusText(status)),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _addSchedule,
-                    child: const Text('스케줄 추가'),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              itemCount: schedules.length,
-              padding: const EdgeInsets.all(16),
-              itemBuilder: (context, index) {
-                final schedule = schedules[index];
-                return Dismissible(
-                  key: Key(schedule.id),
-                  background: Container(
-                    color: Colors.red,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
-                    child: const Icon(
-                      Icons.delete,
-                      color: Colors.white,
-                    ),
-                  ),
-                  direction: DismissDirection.endToStart,
-                  onDismissed: (direction) async {
-                    setState(() {
-                      _schedules.removeWhere((s) => s.id == schedule.id);
-                    });
-                    await _saveSchedules();
-                  },
-                  child: Card(
-                    color: getStatusColor(schedule.status),
-                    child: ListTile(
-                      leading: getStatusIcon(schedule.status),
-                      title: Text(schedule.title),
-                      subtitle: Text(schedule.description),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            schedule.time,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          PopupMenuButton<ScheduleStatus>(
-                            initialValue: schedule.status,
-                            onSelected: (ScheduleStatus status) async {
-                              setState(() {
-                                _schedules[_schedules.indexWhere((s) => s.id == schedule.id)] =
-                                    schedule.copyWith(status: status);
-                              });
-                              await _saveSchedules();
-                            },
-                            itemBuilder: (BuildContext context) =>
-                                ScheduleStatus.values.map((status) => PopupMenuItem<ScheduleStatus>(
-                                  value: status,
-                                  child: Row(
-                                    children: [
-                                      getStatusIcon(status),
-                                      const SizedBox(width: 8),
-                                      Text(getStatusText(status)),
-                                    ],
-                                  ),
-                                )).toList(),
-                          ),
-                        ],
+                )),
+              ],
+            ),
+          ],
+        ),
+        body: schedules.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      '스케줄이 없습니다',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey,
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addSchedule,
-        child: const Icon(Icons.add),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _addSchedule,
+                      child: const Text('스케줄 추가'),
+                    ),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                itemCount: schedules.length,
+                padding: const EdgeInsets.all(16),
+                itemBuilder: (context, index) {
+                  final schedule = schedules[index];
+                  return Dismissible(
+                    key: Key(schedule.id),
+                    background: Container(
+                      color: Colors.red,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16),
+                      child: const Icon(
+                        Icons.delete,
+                        color: Colors.white,
+                      ),
+                    ),
+                    direction: DismissDirection.endToStart,
+                    onDismissed: (direction) async {
+                      setState(() {
+                        _schedules.removeWhere((s) => s.id == schedule.id);
+                      });
+                      await _saveSchedules();
+                    },
+                    child: Card(
+                      color: getStatusColor(schedule.status),
+                      child: ListTile(
+                        leading: getStatusIcon(schedule.status),
+                        title: Text(schedule.title),
+                        subtitle: Text(schedule.description),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              schedule.time,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            PopupMenuButton<ScheduleStatus>(
+                              initialValue: schedule.status,
+                              onSelected: (ScheduleStatus status) async {
+                                setState(() {
+                                  _schedules[_schedules.indexWhere((s) => s.id == schedule.id)] =
+                                      schedule.copyWith(status: status);
+                                });
+                                await _saveSchedules();
+                              },
+                              itemBuilder: (BuildContext context) =>
+                                  ScheduleStatus.values.map((status) => PopupMenuItem<ScheduleStatus>(
+                                    value: status,
+                                    child: Row(
+                                      children: [
+                                        getStatusIcon(status),
+                                        const SizedBox(width: 8),
+                                        Text(getStatusText(status)),
+                                      ],
+                                    ),
+                                  )).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _addSchedule,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
